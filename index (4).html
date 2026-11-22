@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0306">
+<title>For You</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0d0306; }
+  body {
+    background: radial-gradient(ellipse at 50% 40%, #2c0712 0%, #0d0306 58%, #030102 100%);
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+(function () {
+  // ======== change the message here ========
+  var MESSAGE = "a little something for ya <3";
+  // =========================================
+
+  var FONT = "Consolas, Menlo, 'Courier New', monospace";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var cv = document.getElementById("c");
+  var ctx = cv.getContext("2d");
+
+  // ---- colours: [hue, saturation, darkest lightness, brightest lightness] ----
+  // 0 dark red, 1 burgundy, 2 wine, 3 crimson, 4 plum, 5 dusty rose, 6 leaf green, 7 paper
+  var PAL = [
+    [352, 80, 22, 60], [346, 70, 18, 52], [330, 62, 20, 54], [356, 88, 24, 62],
+    [300, 48, 20, 52], [340, 42, 38, 74], [140, 55, 13, 40], [350, 30, 18, 42]
+  ];
+  var L = 8;
+  var FLAT = [];
+  PAL.forEach(function (p) {
+    for (var l = 0; l < L; l++) {
+      FLAT.push("hsl(" + p[0] + "," + p[1] + "%," + (p[2] + (p[3] - p[2]) * l / (L - 1)).toFixed(1) + "%)");
+    }
+  });
+  var RAMP = ".,:;+*o%#@";
+  var CHR = {};
+  function chr(code) { return CHR[code] || (CHR[code] = String.fromCharCode(code)); }
+
+  // ---- 3D points ----
+  var MAX = 20000, N = 0;
+  var PX = new Float32Array(MAX), PY = new Float32Array(MAX), PZ = new Float32Array(MAX);
+  var PB = new Float32Array(MAX), PP = new Uint8Array(MAX), PC = new Uint16Array(MAX);
+
+  function add(x, y, z, p, b, c) {
+    if (N >= MAX) return;
+    PX[N] = x; PY[N] = y; PZ[N] = z; PP[N] = p; PB[N] = b; PC[N] = c || 0; N++;
+  }
+
+  var seed = 11;
+  function rnd() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+
+  function rose(px, py, pz, ax, ay, az, R, p, n) {
+    var ux = ay, uy = -ax, uz = 0, l = Math.hypot(ux, uy);
+    if (l < 1e-3) { ux = 1; uy = 0; l = 1; }
+    ux /= l; uy /= l;
+    var vx = ay * uz - az * uy, vy = az * ux - ax * uz, vz = ax * uy - ay * ux;
+    for (var i = 0; i < n; i++) {
+      var t = Math.sqrt(rnd()), f = rnd() * 6.2832;
+      var wob = Math.sin(5 * f + 7 * t);
+      var r = R * (0.1 + 0.9 * t) * (1 + 0.08 * wob);
+      var y = R * 0.42 * Math.pow(t, 1.4) + R * 0.1 * wob * t;
+      var x = r * Math.cos(f), z = r * Math.sin(f);
+      var b = 0.38 + 0.32 * (1 - t) + 0.3 * (0.5 + 0.5 * Math.sin(5 * f + 9 * t));
+      add(px + x * ux + y * ax + z * vx, py + x * uy + y * ay + z * vy, pz + x * uz + y * az + z * vz, p, b);
+    }
+  }
+
+  function stem(x0, y0, z0, x1, y1, z1, n) {
+    for (var i = 0; i < n; i++) {
+      var t = i / n;
+      add(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t, 6, 0.5 + 0.2 * rnd(), 124);
+    }
+  }
+
+  function build() {
+    var D = 0.95, CAP = Math.cos(62 * Math.PI / 180);
+    var order = [0, 1, 3, 2, 0, 4, 3, 1, 2];
+    var S = [0, -0.95, 0], i;
+
+    // big roses on a dome
+    for (i = 0; i < 9; i++) {
+      var cz = 1 - (i + 0.5) / 9 * (1 - CAP), pol = Math.acos(cz), ph = i * 2.39996;
+      var ax = Math.sin(pol) * Math.cos(ph), ay = cz, az = Math.sin(pol) * Math.sin(ph);
+      var px = ax * D, py = ay * D + 0.15, pz = az * D;
+      stem(px, py, pz, S[0], S[1], S[2], 70);
+      rose(px, py, pz, ax, ay, az, 0.31, order[i], 700);
+    }
+
+    // small buds around the edge
+    for (i = 0; i < 6; i++) {
+      var pol2 = (72 + rnd() * 14) * Math.PI / 180, ph2 = i * 1.05 + 0.4;
+      var bx = Math.sin(pol2) * Math.cos(ph2), by = Math.cos(pol2), bz = Math.sin(pol2) * Math.sin(ph2);
+      var qx = bx * 1.0, qy = by * 1.0 + 0.1, qz = bz * 1.0;
+      stem(qx, qy, qz, S[0], S[1], S[2], 40);
+      rose(qx, qy, qz, bx, by, bz, 0.1, [5, 0, 5, 2, 5, 3][i], 150);
+    }
+
+    // baby's breath
+    var dots = [46, 42, 39, 58];
+    for (i = 0; i < 70; i++) {
+      var pl = rnd() * 1.3, pf = rnd() * 6.2832, rr = 1.15 + rnd() * 0.25;
+      add(Math.sin(pl) * Math.cos(pf) * rr, Math.cos(pl) * rr * 0.9 + 0.1, Math.sin(pl) * Math.sin(pf) * rr,
+        5, 0.5 + 0.5 * rnd(), dots[(rnd() * 4) | 0]);
+    }
+
+    // leaves
+    for (i = 0; i < 7; i++) {
+      var fa = i * 0.9, dx = Math.cos(fa) * 0.9, dz = Math.sin(fa) * 0.9, dy = 0.35;
+      var sx = -Math.sin(fa), sz = Math.cos(fa);
+      for (var k = 0; k < 140; k++) {
+        var s = rnd(), w = rnd() * 2 - 1;
+        var wd = 0.2 * Math.pow(Math.sin(Math.PI * s), 0.7);
+        add(dx * s * 1.05 + sx * w * wd, -0.28 + dy * s - 0.3 * s * s, dz * s * 1.05 + sz * w * wd,
+          6, 0.35 + (Math.abs(w) < 0.12 ? 0.5 : 0) + 0.25 * s);
+      }
+    }
+
+    // wrapping paper (a cone) with a bright rim
+    for (i = 0; i < 3500; i++) {
+      var h = rnd(), f = rnd() * 6.2832, r = 0.62 * (1 - h) + 0.04;
+      var fold = Math.abs(Math.sin(4 * f)) < 0.12;
+      add(Math.cos(f) * r, -0.3 - 0.95 * h, Math.sin(f) * r, 7, 0.3 + (fold ? 0.45 : 0) + 0.2 * rnd());
+    }
+    for (i = 0; i < 220; i++) {
+      var f2 = rnd() * 6.2832;
+      add(Math.cos(f2) * 0.62, -0.3, Math.sin(f2) * 0.62, 7, 0.9, 61);
+    }
+
+    // ribbon band and bow
+    for (i = 0; i < 450; i++) {
+      var f3 = rnd() * 6.2832;
+      add(Math.cos(f3) * 0.35, -0.82 + (rnd() - 0.5) * 0.1, Math.sin(f3) * 0.35, 0, 0.6 + 0.4 * rnd(), 35);
+    }
+    for (var side = -1; side <= 1; side += 2) {
+      for (i = 0; i < 150; i++) {
+        var q = rnd() * 6.2832;
+        add(side * (0.14 + 0.1 * Math.cos(q)), -0.82 + 0.07 * Math.sin(q), 0.37 + 0.02 * rnd(), 0, 0.7 + 0.3 * rnd(), 64);
+      }
+    }
+    stem(0, -0.95, 0, 0, -1.42, 0, 120);
+  }
+  build();
+
+  // ---- screen / grid ----
+  var W, H, dpr, fs, cw, ch, cols, rows, U, cx, cy, zb, cc, ck;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fs = Math.max(8, Math.min(14, W / 52));
+    ctx.font = fs + "px " + FONT;
+    cw = ctx.measureText("M").width; ch = fs;
+    cols = Math.ceil(W / cw); rows = Math.ceil(H / ch);
+    U = Math.min(W * 0.32, H * 0.27);
+    cx = W / 2; cy = H * 0.42;
+    zb = new Float32Array(cols * rows);
+    cc = new Uint16Array(cols * rows);
+    ck = new Uint8Array(cols * rows);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---- floating hearts and sparkles ----
+  var SYM = ["<3", "\u2665", "*", "+", ".", "\u00b7", "x", "o"];
+  var PCOL = ["#b0122e", "#d4203f", "#8b1d4a", "#6b2160", "#e07a8f"];
+  var parts = [];
+  for (var pi = 0; pi < 48; pi++) {
+    parts.push({
+      bx: rnd() * W, y: rnd() * H, vy: -(12 + rnd() * 26), amp: 6 + rnd() * 18,
+      f: 0.4 + rnd() * 0.8, ph: rnd() * 6.28, tw: 1 + rnd() * 2,
+      s: SYM[(rnd() * SYM.length) | 0], c: PCOL[(rnd() * PCOL.length) | 0], size: 10 + rnd() * 8
+    });
+  }
+  var bursts = [];
+
+  // ---- interaction: drag to spin, tap for hearts ----
+  var ang = 0, spin = reduce ? 0.12 : 0.55, drag = false, lx = 0, sx0 = 0, sy0 = 0, moved = 0;
+  cv.addEventListener("pointerdown", function (e) {
+    drag = true; lx = sx0 = e.clientX; sy0 = e.clientY; moved = 0;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    ang += (e.clientX - lx) * 0.012; lx = e.clientX;
+    moved = Math.max(moved, Math.abs(e.clientX - sx0) + Math.abs(e.clientY - sy0));
+  });
+  function up(e) {
+    if (!drag) return;
+    drag = false;
+    if (moved < 8) {
+      for (var i = 0; i < 8; i++) {
+        bursts.push({
+          x: e.clientX, y: e.clientY, vx: (Math.random() - 0.5) * 120, vy: -(50 + Math.random() * 120),
+          life: 1.8, s: Math.random() < 0.6 ? "\u2665" : "<3", c: PCOL[(Math.random() * 5) | 0], size: 12 + Math.random() * 10
+        });
+      }
+    }
+  }
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", function () { drag = false; });
+
+  // ---- draw loop ----
+  var TILT = 0.28, last = 0, time = 0;
+  var CAT = [" /\\_/\\ ", "( o.o )", " > ^ < "];
+
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (ts - last < 33) return;
+    var dt = Math.min(0.1, (ts - last) / 1000); last = ts; time += dt;
+    if (!drag) ang += dt * spin;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.textBaseline = "top"; ctx.textAlign = "left";
+
+    // background hearts and sparkles
+    var i, p;
+    for (i = 0; i < parts.length; i++) {
+      p = parts[i];
+      if (!reduce) p.y += p.vy * dt;
+      if (p.y < -30) { p.y = H + 20; p.bx = Math.random() * W; }
+      ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(time * p.tw + p.ph));
+      ctx.fillStyle = p.c; ctx.font = p.size + "px " + FONT;
+      ctx.fillText(p.s, p.bx + Math.sin(time * p.f + p.ph) * p.amp, p.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // bouquet
+    zb.fill(-1e9); ck.fill(255);
+    var ca = Math.cos(ang), sa = Math.sin(ang), ct = Math.cos(TILT), st = Math.sin(TILT);
+    for (i = 0; i < N; i++) {
+      var x = PX[i], y = PY[i], z = PZ[i];
+      var x1 = x * ca + z * sa, z1 = -x * sa + z * ca;
+      var y2 = y * ct - z1 * st, z2 = y * st + z1 * ct;
+      var s = 4 / (4 - z2);
+      var c = ((cx + x1 * U * s) / cw) | 0, r = ((cy - y2 * U * s) / ch) | 0;
+      if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+      var k = r * cols + c;
+      if (z2 > zb[k]) {
+        zb[k] = z2;
+        var zn = (z2 + 1.6) / 3.2; zn = zn < 0 ? 0 : zn > 1 ? 1 : zn;
+        var b = PB[i] * (0.55 + 0.45 * zn); if (b > 1) b = 1;
+        ck[k] = PP[i] * L + ((b * (L - 1) + 0.5) | 0);
+        cc[k] = PC[i] || RAMP.charCodeAt(Math.min(RAMP.length - 1, (b * RAMP.length) | 0));
+      }
+    }
+    ctx.font = fs + "px " + FONT;
+    var cur = -1;
+    for (var rr = 0; rr < rows; rr++) {
+      for (var cl = 0; cl < cols; cl++) {
+        var kk = rr * cols + cl, v = ck[kk];
+        if (v === 255) continue;
+        if (v !== cur) { ctx.fillStyle = FLAT[v]; cur = v; }
+        ctx.fillText(chr(cc[kk]), cl * cw, rr * ch);
+      }
+    }
+
+    // little cat and message
+    var y0 = Math.min(cy + 1.45 * U, H - ch * 8);
+    ctx.fillStyle = "#d9a3ad"; ctx.textAlign = "center";
+    for (i = 0; i < CAT.length; i++) ctx.fillText(CAT[i], cx, y0 + i * ch);
+    ctx.fillStyle = "#c9707f"; ctx.font = (fs * 1.25) + "px " + FONT;
+    ctx.fillText(MESSAGE, cx, y0 + 4.2 * ch);
+
+    // tap hearts
+    for (i = bursts.length - 1; i >= 0; i--) {
+      var bu = bursts[i];
+      bu.life -= dt; bu.x += bu.vx * dt; bu.y += bu.vy * dt; bu.vy += 40 * dt;
+      if (bu.life <= 0) { bursts.splice(i, 1); continue; }
+      ctx.globalAlpha = Math.min(1, bu.life); ctx.fillStyle = bu.c; ctx.font = bu.size + "px " + FONT;
+      ctx.fillText(bu.s, bu.x, bu.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
